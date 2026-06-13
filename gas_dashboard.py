@@ -411,7 +411,7 @@ st.markdown(f"""
 <div class="header-bar" style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;">
   <div></div>
   <div style="text-align:center;">
-    <p class="header-brand">VANGUARD</p>
+    <p class="header-brand">VENGUARD</p>
     <p class="header-motto">Protecting lives before danger strikes</p>
     <p class="header-product">Gas Leak & Fire Safety Monitoring — Dhaka, Bangladesh</p>
   </div>
