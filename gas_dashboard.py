@@ -1,7 +1,18 @@
 import streamlit as st
 import random
 import time
+import requests
 from datetime import datetime
+
+# ════════════════════════════════════════════════════════════════════════════
+# DEMO MODE CONFIGURATION
+# Set to True  → uses simulated data (always works, no hardware needed)
+# Set to False → reads real gas sensor data from Firebase (ESP32 hardware)
+# ════════════════════════════════════════════════════════════════════════════
+DEMO_MODE = False
+
+# Paste your Firebase Realtime Database URL here (no trailing slash)
+FIREBASE_URL = "https://vanguard-gas-detector-default-rtdb.asia-southeast1.firebasedatabase.app"
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -288,6 +299,53 @@ def sim_device_readings(devices):
         readings.append({**d, "gas_ppm": gas_ppm, "smoke_pct": smoke_pct})
     return readings
 
+def firebase_device_readings(devices):
+    """
+    Reads real sensor data from Firebase (sent by the Slave ESP32).
+    Falls back to simulated data if Firebase is unreachable —
+    so the dashboard never breaks even if hardware/internet fails.
+    """
+    try:
+        url = f"{FIREBASE_URL}/gasStatus.json"
+        response = requests.get(url, timeout=3)
+        data = response.json()
+
+        if data is None:
+            raise ValueError("No data in Firebase yet")
+
+        gas_danger = data.get("gasDanger", False)
+
+        # Convert the simple true/false signal into PPM-style numbers
+        # so it fits the existing card/coloring logic
+        if gas_danger:
+            gas_ppm   = 650   # above danger threshold (500+)
+            smoke_pct = 28.0
+        else:
+            gas_ppm   = 50    # safe baseline
+            smoke_pct = 5.0
+
+        readings = []
+        for d in devices:
+            if d["id"] == "DEV-001":  # the device connected to real hardware
+                if d["status"] == "online":
+                    readings.append({**d, "gas_ppm": gas_ppm, "smoke_pct": smoke_pct})
+                else:
+                    readings.append({**d, "gas_ppm": None, "smoke_pct": None})
+            else:
+                # Other devices remain simulated for demo richness
+                if d["status"] == "online":
+                    base_gas = random.choice([42, 58])
+                    readings.append({**d,
+                        "gas_ppm": base_gas + random.randint(-10, 10),
+                        "smoke_pct": round(random.uniform(0, 15), 1)})
+                else:
+                    readings.append({**d, "gas_ppm": None, "smoke_pct": None})
+        return readings
+
+    except Exception as e:
+        st.session_state.firebase_error = str(e)
+        return sim_device_readings(devices)
+
 def gas_cls(ppm):
     if ppm is None: return "metric-safe", "–"
     if ppm < 200:   return "metric-safe",  "SAFE"
@@ -301,15 +359,21 @@ def smoke_cls(pct):
     return "metric-danger", "DANGER"
 
 # ── Session state ──────────────────────────────────────────────────────────────
-if "alert_log"    not in st.session_state: st.session_state.alert_log    = []
-if "device_data"  not in st.session_state: st.session_state.device_data  = sim_device_readings(DEVICES)
-if "last_refresh" not in st.session_state: st.session_state.last_refresh = time.time()
+if "alert_log"      not in st.session_state: st.session_state.alert_log      = []
+if "device_data"    not in st.session_state: st.session_state.device_data    = sim_device_readings(DEVICES)
+if "last_refresh"   not in st.session_state: st.session_state.last_refresh   = time.time()
+if "firebase_error" not in st.session_state: st.session_state.firebase_error = None
 
-REFRESH_INTERVAL = 30
+# Demo mode refreshes every 30s (slow, for showing variety)
+# Live mode refreshes every 2s (fast, for real-time sensor response)
+REFRESH_INTERVAL = 30 if DEMO_MODE else 2
 
 elapsed = time.time() - st.session_state.last_refresh
 if elapsed >= REFRESH_INTERVAL:
-    st.session_state.device_data  = sim_device_readings(DEVICES)
+    if DEMO_MODE:
+        st.session_state.device_data = sim_device_readings(DEVICES)
+    else:
+        st.session_state.device_data = firebase_device_readings(DEVICES)
     st.session_state.last_refresh = time.time()
     elapsed = 0
 
@@ -342,6 +406,7 @@ st.session_state.alert_log = st.session_state.alert_log[:20]
 # ══════════════════════════════ RENDER ════════════════════════════════════════
 
 # ── Header ────────────────────────────────────────────────────────────────────
+mode_label = "🟡 DEMO MODE" if DEMO_MODE else ("🟢 LIVE" if not st.session_state.firebase_error else "🟠 LIVE (fallback)")
 st.markdown(f"""
 <div class="header-bar" style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;">
   <div></div>
@@ -352,7 +417,7 @@ st.markdown(f"""
   </div>
   <div style="text-align:right;">
     <div class="header-time">🕐 {now}</div>
-    <div class="header-refresh">Auto-refresh in {next_refresh}s &nbsp;(every 30s)</div>
+    <div class="header-refresh">{mode_label} &nbsp;·&nbsp; refresh in {next_refresh}s</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
