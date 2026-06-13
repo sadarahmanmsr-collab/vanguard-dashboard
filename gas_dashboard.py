@@ -16,7 +16,7 @@ FIREBASE_URL = "https://vanguard-gas-detector-default-rtdb.asia-southeast1.fireb
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Vanguard – Gas & Fire Monitor",
+    page_title="Venguard – Gas & Fire Monitor",
     page_icon="🛡️",
     layout="wide",
 )
